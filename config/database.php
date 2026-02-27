@@ -14,7 +14,7 @@ try {
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
     //Opcional: descomente a linha abaixo para testar se conectou (lembre de apagar depois)
-    echo "Conexão com ZenBoard_DB realizada com sucesso!";
+    // echo "Conexão com ZenBoard_DB realizada com sucesso!";
 } catch (PDOException $e) {
     // Em produção não mostramos o erro inteiro na tela, mas para estudo é útil
     die("Erro de conexão ao banco de dados: " . $e->getMessage());
