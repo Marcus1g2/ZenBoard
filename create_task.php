@@ -15,12 +15,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Impede títulos vazios
     if (!empty($title)) {
-        // Por padrão, a nova tarefa entra como 'pendente' conforme modelamos no banco
-        $stmt = $pdo->prepare("INSERT INTO tasks (user_id, title) VALUES (?, ?)");
-        $stmt->execute([$user_id, $title]);
-    }
+        try {
+            // Por padrão, a nova tarefa entra como 'pendente' conforme modelamos no banco
+            // Adicionado 'description' nulo/vazio para evitar erro 1364 no MySQL
+            $stmt = $pdo->prepare("INSERT INTO tasks (user_id, title, description) VALUES (?, ?, '')");
+            $stmt->execute([$user_id, $title]);
 
-    // Volta pro painel independentemente de dar acerto/erro (podemos evoluir pra msg de erro depois)
-    header("Location: index.php");
-    exit;
+            // Volta pro painel apenas se deu sucesso
+            header("Location: index.php");
+            exit;
+        } catch (PDOException $e) {
+            // Se der erro no banco (ex: problema nas colunas de data que você criou), ele mostrará na tela
+            die("Erro ao tentar salvar a tarefa: " . $e->getMessage());
+        }
+    } else {
+        header("Location: index.php");
+        exit;
+    }
 }
