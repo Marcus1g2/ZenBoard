@@ -19,31 +19,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = "Por favor, preencha todos os campos.";
     } else {
         // Busca o usuário pelo e-mail
-        $stmt = $pdo->prepare("SELECT id, name, password_hash, login_attempts FROM users WHERE email = ?");
+        $stmt = $pdo->prepare("SELECT id, name, password_hash, login_attempts, locked_until FROM users WHERE email = ?");
         $stmt->execute([$email]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        // Se o e-mail existe E a senha confere
-        if ($user && password_verify($password, $user['password_hash'])) {
-            // Sucesso! Inicia a sessão
-            $_SESSION['user_id'] = $user['id'];
-            $_SESSION['user_name'] = $user['name'];
+        if ($user) {
+            // Verifica se a conta está bloqueada no momento
+            if (!empty($user['locked_until']) && strtotime($user['locked_until']) > time()) {
+                $time_left = ceil((strtotime($user['locked_until']) - time()) / 60);
+                $error = "Conta temporariamente bloqueada por múltiplas tentativas. Tente novamente em {$time_left} minutos.";
+            } else {
+                // Conta liberada ou bloqueio já expirou, vamos checar a senha
+                if (password_verify($password, $user['password_hash'])) {
+                    // Sucesso! Inicia a sessão
+                    $_SESSION['user_id'] = $user['id'];
+                    $_SESSION['user_name'] = $user['name'];
 
-            // Opcional: Zera as tentativas de login (treinamento de segurança)
-            $updateStmt = $pdo->prepare("UPDATE users SET login_attempts = 0 WHERE id = ?");
-            $updateStmt->execute([$user['id']]);
+                    // Zera as tentativas e limpa o tempo de bloqueio
+                    $updateStmt = $pdo->prepare("UPDATE users SET login_attempts = 0, locked_until = NULL WHERE id = ?");
+                    $updateStmt->execute([$user['id']]);
 
-            // Redireciona para o Kanban
-            header("Location: ../index.php");
-            exit;
-        } else {
-            $error = "E-mail ou senha incorretos.";
+                    // Redireciona para o Kanban
+                    header("Location: ../index.php");
+                    exit;
+                } else {
+                    // Senha Incorreta
+                    $attempts = $user['login_attempts'] + 1;
+                    $lock_until = null;
+                    $error = "E-mail ou senha incorretos.";
 
-            // Opcional: Registra uma tentativa falha (treinamento de segurança)
-            if ($user) {
-                $failStmt = $pdo->prepare("UPDATE users SET login_attempts = login_attempts + 1 WHERE id = ?");
-                $failStmt->execute([$user['id']]);
+                    // Se atingiu 5 falhas, bloqueia por 15 minutos
+                    if ($attempts >= 5) {
+                        $lock_until = date('Y-m-d H:i:s', strtotime('+15 minutes'));
+                        $error = "Muitas tentativas falhas. Sua conta foi bloqueada por 15 minutos.";
+                    } else {
+                        $restantes = 5 - $attempts;
+                        if ($restantes <= 2) {
+                            $error .= " Atenção: Você tem apenas mais {$restantes} " . ($restantes == 1 ? "tentativa" : "tentativas") . " antes do bloqueio.";
+                        }
+                    }
+
+                    // Registra a falha no banco
+                    $failStmt = $pdo->prepare("UPDATE users SET login_attempts = ?, locked_until = ? WHERE id = ?");
+                    $failStmt->execute([$attempts, $lock_until, $user['id']]);
+                }
             }
+        } else {
+            // E-mail não encontrado (mas exibimos mensagem genérica por segurança)
+            $error = "E-mail ou senha incorretos.";
         }
     }
 }
